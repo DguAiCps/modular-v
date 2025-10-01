@@ -1,0 +1,47 @@
+# System-wide configuration
+system:
+  ros__parameters:
+    # System parameters
+    robot_name: "modular_v"
+    robot_type: "differential_drive"
+    max_linear_velocity: 1.0  # m/s
+    max_angular_velocity: 1.0  # rad/s
+
+    # Safety parameters
+    emergency_stop_distance: 0.3  # meters
+    warning_distance: 0.5  # meters
+    comfort_distance: 1.0  # meters
+
+    # Module management
+    health_check_frequency: 1.0  # Hz
+    watchdog_timeout: 5.0  # seconds
+
+    # Frame IDs
+    robot_base_frame: "base_link"
+    odom_frame: "odom"
+    map_frame: "map"
+    camera_frame: "zed2i_base_link"
+
+# Module-specific configurations
+modules:
+  ros__parameters:
+    # Modules to load on startup
+    enabled_modules:
+      - "camera_wrapper"
+      - "rtabmap_wrapper"
+      - "navigation_wrapper"
+      - "motor_controller"
+      - "voice_interface"
+
+    # Module dependencies
+    dependencies:
+      rtabmap_wrapper: ["camera_wrapper"]
+      navigation_wrapper: ["rtabmap_wrapper"]
+
+    # Module priorities (lower = higher priority)
+    priorities:
+      motor_controller: 0  # Critical - safety
+      camera_wrapper: 1    # High - sensing
+      rtabmap_wrapper: 2   # Normal - mapping
+      navigation_wrapper: 2  # Normal - planning
+      voice_interface: 3   # Low - interaction

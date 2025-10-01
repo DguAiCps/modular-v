@@ -1,0 +1,48 @@
+# Build directories
+build/
+install/
+log/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# ROS
+*.bag
+*.db3
+.ros/
+
+# Generated files
+devel/
+msg_gen/
+srv_gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/_build/
+docs/html/
+docs/latex/
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Log files
+*.log
+
+# CUDA
+*.cubin
+*.fatbin
