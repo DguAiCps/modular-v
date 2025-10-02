@@ -40,7 +40,7 @@
 │                Hardware Abstraction Layer                  │
 │                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │Sensor Driver │  │Motor Control │  │ GPIO Handler │    │
+│  │Sensor Driver │  │TurtleBot3 I/F│  │ GPIO Handler │    │
 │  └──────────────┘  └──────────────┘  └──────────────┘    │
 ├────────────────────────────────────────────────────────────┤
 │                   Communication Layer                      │
@@ -74,9 +74,9 @@ graph TB
         OA[Obstacle Avoidance]
     end
 
-    subgraph Motion Control
-        MC[Motor Controller]
-        ODOM[Odometry]
+    subgraph Motion Control [TurtleBot3 Bringup - External]
+        TB3[TurtleBot3 Motor System]
+        ODOM[Odometry Publisher]
     end
 
     UI -->|Commands| GP
@@ -90,8 +90,8 @@ graph TB
     MAP -->|OccupancyGrid| GP
     GP -->|Path| LP
     OA -->|Obstacles| LP
-    LP -->|Velocity| MC
-    MC -->|Feedback| ODOM
+    LP -->|/cmd_vel| TB3
+    TB3 -->|/odom| ODOM
     ODOM -->|Pose| LOC
     LP -->|Status| UI
 ```
@@ -282,11 +282,11 @@ User Command / Destination
     │Local Planner │ ← Obstacles
     └──────────────┘
            ↓
-     Velocity Commands
+     /cmd_vel (Velocity)
            ↓
-    ┌──────────────┐
-    │Motor Control │
-    └──────────────┘
+    ┌──────────────────┐
+    │TurtleBot3 Bringup│ (External)
+    └──────────────────┘
            ↓
       Robot Motion
 ```
@@ -300,12 +300,15 @@ User Command / Destination
 | /zed2i/image_raw | sensor_msgs/Image | 15Hz | Best Effort |
 | /zed2i/depth/image | sensor_msgs/Image | 15Hz | Best Effort |
 | /zed2i/point_cloud | sensor_msgs/PointCloud2 | 15Hz | Best Effort |
-| /rtabmap/map | nav_msgs/OccupancyGrid | 1Hz | Reliable |
+| /rtabmap/grid_map | nav_msgs/OccupancyGrid | 1Hz | Reliable |
+| /map | nav_msgs/OccupancyGrid | 1Hz | Transient Local, Reliable |
 | /rtabmap/localization_pose | geometry_msgs/PoseWithCovarianceStamped | 30Hz | Best Effort |
 | /cmd_vel | geometry_msgs/Twist | 20Hz | Reliable |
 | /path | nav_msgs/Path | 1Hz | Reliable |
 | /obstacles | modular_v/ObstacleArray | 10Hz | Best Effort |
 | /system/status | modular_v/SystemStatus | 1Hz | Reliable |
+
+**Note**: `/rtabmap/grid_map` is relayed to `/map` by rtabmap_wrapper for Nav2 compatibility.
 
 ### 5.2 서비스 인터페이스
 

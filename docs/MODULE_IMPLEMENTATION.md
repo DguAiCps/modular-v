@@ -6,7 +6,6 @@
 3. [SLAM 모듈](#3-slam-모듈)
 4. [내비게이션 모듈](#4-내비게이션-모듈)
 5. [사용자 인터페이스 모듈](#5-사용자-인터페이스-모듈)
-6. [모터 제어 모듈](#6-모터-제어-모듈)
 
 ## 1. 모듈 개발 개요
 
@@ -647,97 +646,95 @@ std::string ZedCameraModule::getHealthStatus() const {
 
 ## 3. SLAM 모듈
 
-### 3.1 RTAB-Map 통합 모듈
+### 3.1 RTAB-Map 래퍼 모듈
+
+**중요**: RTAB-Map 모듈은 rtabmap_ros 패키지를 직접 링크하지 않고, `ros2 launch`로 실행한 뒤 모니터링하는 방식을 사용합니다. (Jetson의 커스텀 OpenCV와 opencv_aruco 충돌 방지)
+
+#### 3.1.1 2D Occupancy Grid 생성 설정
+
+RTAB-Map은 3D 포인트클라우드를 2D occupancy grid로 변환하여 Nav2에 제공합니다.
+
+```yaml
+# modules/perception/rtabmap_module/config/rtabmap_config.yaml
+grid:
+  from_depth: true              # Depth에서 그리드 생성
+  cell_size: 0.05               # 5cm 해상도
+  range_max: 5.0                # 5m 최대 범위
+  range_min: 0.0
+  cluster_radius: 1.0
+  ground_is_obstacle: false     # 바닥은 장애물 아님
+  max_obstacle_height: 2.0      # 2m 이하는 장애물
+  max_ground_height: 0.1        # 10cm 이하는 바닥
+  normals_segmentation: true
+  3d: false                     # 2D 그리드 생성
+  noise_filtering_radius: 4
+  noise_filtering_min_neighbors: 5
+```
+
+#### 3.1.2 RTABMapWrapper 구현
 
 ```cpp
-// modules/perception/rtabmap_module/include/rtabmap_module/rtabmap_module.hpp
-#ifndef RTABMAP_MODULE_HPP
-#define RTABMAP_MODULE_HPP
-
-#include "core/module_interface.hpp"
-#include <rtabmap_ros/CoreWrapper.h>
-#include <nav_msgs/msg/occupancy_grid.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-#include <visualization_msgs/msg/marker_array.hpp>
-
-namespace modular_v {
-namespace perception {
-
-class RTABMapModule : public core::IModule {
+// modules/perception/rtabmap_module/include/rtabmap_module/rtabmap_wrapper.hpp
+class RTABMapWrapper : public core::BaseModule {
 public:
-    RTABMapModule();
-    ~RTABMapModule() override;
+    RTABMapWrapper();
+    ~RTABMapWrapper() override;
 
-    // IModule implementation
-    bool initialize() override;
-    bool start() override;
-    bool stop() override;
-    bool shutdown() override;
-    // ... 기타 필수 메서드들
+    // RTAB-Map 제어
+    bool saveMap(const std::string& path);
+    bool resetMap();
+    bool setLocalizationMode(bool enable);
+
+protected:
+    bool onInitialize() override;
+    bool onStart() override;
+    bool onStop() override;
+    bool onShutdown() override;
 
 private:
-    // Callbacks
-    void pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-    void odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    // RTAB-Map output 모니터링
+    void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void poseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
 
-    // Map management
-    void updateMap();
-    void publishMap();
-    void saveMap(const std::string& path);
-    void loadMap(const std::string& path);
+    // ROS2 subscribers (모니터링용)
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_sub_;
 
-    // Localization
-    void updateLocalization();
-    void publishPose();
+    // Nav2용 맵 relay publisher
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr nav2_map_pub_;
 
-    // Loop closure
-    void detectLoopClosure();
-
-    // Core
-    std::unique_ptr<rtabmap::Rtabmap> rtabmap_;
-
-    // ROS2
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pc_sub_;
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-
-    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_cloud_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
-
-    // TF
-    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-    std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
-    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-
-    // Configuration
-    struct Config {
-        // SLAM parameters
-        bool localization_mode = false;
-        std::string database_path = "~/.ros/rtabmap.db";
-        bool delete_db_on_start = false;
-
-        // Processing parameters
-        float update_rate = 1.0;  // Hz
-        int odom_sensor = 0;  // 0: odometry, 1: visual
-
-        // Map parameters
-        float grid_cell_size = 0.05;  // meters
-        float map_update_distance = 1.0;  // meters
-        float map_update_angle = 30.0;  // degrees
-
-        // Memory management
-        int max_memory_size = 0;  // 0 = unlimited
-        float memory_threshold = 0;  // 0 = disabled
-    } config_;
+    // RTAB-Map 제어 service clients
+    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr reset_client_;
+    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr pause_client_;
 };
-
-} // namespace perception
-} // namespace modular_v
-
-#endif // RTABMAP_MODULE_HPP
 ```
+
+#### 3.1.3 맵 Relay 구현
+
+```cpp
+void RTABMapWrapper::mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    // RTAB-Map이 생성한 /rtabmap/grid_map을 /map으로 relay
+    if (nav2_map_pub_ && nav2_map_pub_->get_subscription_count() > 0) {
+        nav2_map_pub_->publish(*msg);
+    }
+}
+```
+
+#### 3.1.4 실행 방법
+
+```bash
+# RTAB-Map 실행 (2D 그리드 생성 활성화)
+ros2 launch rtabmap_launch rtabmap.launch.py \
+  args:="--delete_db_on_start" \
+  Grid.FromDepth:=true \
+  Grid.CellSize:=0.05 \
+  Grid.3D:=false
+
+# rtabmap_wrapper 실행 (맵을 /map으로 relay)
+ros2 run rtabmap_module rtabmap_wrapper
+```
+
+**Note**: CMakeLists.txt에서 rtabmap_slam, rtabmap_sync, rtabmap_util을 링크하지 않습니다. opencv_aruco 의존성 충돌을 피하기 위함입니다.
 
 ## 4. 내비게이션 모듈
 
@@ -1047,271 +1044,27 @@ private:
 #endif // HAPTIC_MODULE_HPP
 ```
 
-## 6. 모터 제어 모듈
+## 6. 모터 제어
 
-### 6.1 베이스 컨트롤러 모듈
+**Note**: 모터 제어는 TurtleBot3 bringup (`ros2 launch turtlebot3_bringup robot.launch.py`)에서 처리합니다. Modular-V 프레임워크는 Nav2를 통해 `/cmd_vel` 토픽을 publish하며, TurtleBot3 시스템이 이를 구독하여 모터를 제어합니다.
 
-```cpp
-// modules/mobility/base_controller/include/base_controller/base_controller_module.hpp
-#ifndef BASE_CONTROLLER_MODULE_HPP
-#define BASE_CONTROLLER_MODULE_HPP
+### 6.1 통합 방법
 
-#include "core/module_interface.hpp"
-#include <geometry_msgs/msg/twist.hpp>
-#include <nav_msgs/msg/odometry.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
-#include <tf2_ros/transform_broadcaster.hpp>
+```bash
+# 1. TurtleBot3 모터 시스템 시작
+ros2 launch turtlebot3_bringup robot.launch.py
 
-namespace modular_v {
-namespace mobility {
-
-class BaseControllerModule : public core::IModule {
-public:
-    BaseControllerModule();
-    ~BaseControllerModule() override;
-
-    // IModule implementation
-    bool initialize() override;
-    bool start() override;
-    // ... 기타 메서드
-
-    // Motion control API
-    void setVelocity(float linear_x, float angular_z);
-    void stop();
-    void emergencyStop();
-
-    // Odometry
-    nav_msgs::msg::Odometry getOdometry() const;
-
-private:
-    // Motor control
-    void initMotors();
-    void setMotorSpeed(int motor_id, float speed_rpm);
-    void updateMotorControl();
-
-    // Kinematics
-    void computeWheelVelocities(float linear, float angular,
-                                float& left_vel, float& right_vel);
-    void computeOdometry(float left_vel, float right_vel, float dt);
-
-    // Control loop
-    void controlLoop();
-
-    // PID control
-    struct PIDController {
-        float kp, ki, kd;
-        float integral = 0;
-        float prev_error = 0;
-
-        float compute(float setpoint, float measured, float dt);
-    };
-
-    PIDController left_pid_, right_pid_;
-
-    // Motor drivers
-    void* motor_driver_;  // Dynamixel or other driver
-    std::vector<int> motor_ids_;
-
-    // State
-    geometry_msgs::msg::Twist cmd_vel_;
-    nav_msgs::msg::Odometry odometry_;
-    std::mutex cmd_mutex_;
-
-    // Threads
-    std::thread control_thread_;
-    std::atomic<bool> running_{false};
-
-    // ROS2
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pub_;
-
-    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-
-    // Configuration
-    struct Config {
-        // Robot parameters
-        float wheel_radius = 0.1;  // meters
-        float wheel_base = 0.5;  // meters
-        float max_linear_vel = 1.0;  // m/s
-        float max_angular_vel = 1.0;  // rad/s
-
-        // Motor parameters
-        int motor_left_id = 1;
-        int motor_right_id = 2;
-        float gear_ratio = 50.0;
-        float encoder_resolution = 4096;
-
-        // Control parameters
-        float control_frequency = 50.0;  // Hz
-        PIDController left_pid = {1.0, 0.1, 0.01};
-        PIDController right_pid = {1.0, 0.1, 0.01};
-    } config_;
-};
-
-} // namespace mobility
-} // namespace modular_v
-
-#endif // BASE_CONTROLLER_MODULE_HPP
+# 2. Modular-V 시스템 시작 (Nav2 포함)
+ros2 launch modular_v system_bringup.launch.py
 ```
 
-### 6.2 오도메트리 모듈 구현 예제
+### 6.2 토픽 연결
 
-```cpp
-// modules/mobility/base_controller/src/base_controller_module.cpp (일부)
-#include "base_controller/base_controller_module.hpp"
-#include <dynamixel_sdk/dynamixel_sdk.h>
-
-namespace modular_v {
-namespace mobility {
-
-void BaseControllerModule::computeOdometry(float left_vel, float right_vel, float dt) {
-    // 차동 구동 로봇의 오도메트리 계산
-    float linear_vel = (left_vel + right_vel) / 2.0;
-    float angular_vel = (right_vel - left_vel) / config_.wheel_base;
-
-    // 위치 업데이트 (2D)
-    float delta_x = linear_vel * cos(odometry_.pose.pose.orientation.z) * dt;
-    float delta_y = linear_vel * sin(odometry_.pose.pose.orientation.z) * dt;
-    float delta_theta = angular_vel * dt;
-
-    odometry_.pose.pose.position.x += delta_x;
-    odometry_.pose.pose.position.y += delta_y;
-
-    // Quaternion 업데이트
-    tf2::Quaternion q;
-    q.setRPY(0, 0, odometry_.pose.pose.orientation.z + delta_theta);
-    odometry_.pose.pose.orientation.x = q.x();
-    odometry_.pose.pose.orientation.y = q.y();
-    odometry_.pose.pose.orientation.z = q.z();
-    odometry_.pose.pose.orientation.w = q.w();
-
-    // 속도 업데이트
-    odometry_.twist.twist.linear.x = linear_vel;
-    odometry_.twist.twist.angular.z = angular_vel;
-
-    // 타임스탬프
-    odometry_.header.stamp = node_->get_clock()->now();
-    odometry_.header.frame_id = "odom";
-    odometry_.child_frame_id = "base_link";
-
-    // Covariance 설정
-    // Position covariance
-    odometry_.pose.covariance[0] = 0.01;  // x
-    odometry_.pose.covariance[7] = 0.01;  // y
-    odometry_.pose.covariance[35] = 0.01;  // yaw
-
-    // Velocity covariance
-    odometry_.twist.covariance[0] = 0.01;  // linear x
-    odometry_.twist.covariance[35] = 0.01;  // angular z
-}
-
-void BaseControllerModule::controlLoop() {
-    auto last_time = std::chrono::steady_clock::now();
-
-    // Dynamixel 초기화
-    dynamixel::PortHandler* port_handler = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
-    dynamixel::PacketHandler* packet_handler = dynamixel::PacketHandler::getPacketHandler(2.0);
-
-    port_handler->openPort();
-    port_handler->setBaudRate(1000000);
-
-    while (running_ && rclcpp::ok()) {
-        auto current_time = std::chrono::steady_clock::now();
-        float dt = std::chrono::duration<float>(current_time - last_time).count();
-        last_time = current_time;
-
-        // 명령 속도 가져오기
-        geometry_msgs::msg::Twist cmd;
-        {
-            std::lock_guard<std::mutex> lock(cmd_mutex_);
-            cmd = cmd_vel_;
-        }
-
-        // 휠 속도 계산
-        float left_vel, right_vel;
-        computeWheelVelocities(cmd.linear.x, cmd.angular.z, left_vel, right_vel);
-
-        // 엔코더 읽기
-        int32_t left_encoder, right_encoder;
-        packet_handler->read4ByteTxRx(port_handler, config_.motor_left_id,
-                                     132, (uint32_t*)&left_encoder);  // Present Position
-        packet_handler->read4ByteTxRx(port_handler, config_.motor_right_id,
-                                     132, (uint32_t*)&right_encoder);
-
-        // 실제 속도 계산
-        static int32_t prev_left_encoder = left_encoder;
-        static int32_t prev_right_encoder = right_encoder;
-
-        float left_actual = (left_encoder - prev_left_encoder) * 2 * M_PI /
-                           (config_.encoder_resolution * config_.gear_ratio * dt);
-        float right_actual = (right_encoder - prev_right_encoder) * 2 * M_PI /
-                            (config_.encoder_resolution * config_.gear_ratio * dt);
-
-        prev_left_encoder = left_encoder;
-        prev_right_encoder = right_encoder;
-
-        // PID 제어
-        float left_cmd = left_pid_.compute(left_vel, left_actual, dt);
-        float right_cmd = right_pid_.compute(right_vel, right_actual, dt);
-
-        // 모터 명령 전송
-        int32_t left_velocity = static_cast<int32_t>(left_cmd * 60.0 /
-                                                     (2 * M_PI * config_.wheel_radius));
-        int32_t right_velocity = static_cast<int32_t>(right_cmd * 60.0 /
-                                                      (2 * M_PI * config_.wheel_radius));
-
-        packet_handler->write4ByteTxRx(port_handler, config_.motor_left_id,
-                                      104, left_velocity);  // Goal Velocity
-        packet_handler->write4ByteTxRx(port_handler, config_.motor_right_id,
-                                      104, -right_velocity);  // 반대 방향
-
-        // 오도메트리 업데이트
-        computeOdometry(left_actual * config_.wheel_radius,
-                       right_actual * config_.wheel_radius, dt);
-
-        // 오도메트리 발행
-        odom_pub_->publish(odometry_);
-
-        // TF 발행
-        geometry_msgs::msg::TransformStamped transform;
-        transform.header = odometry_.header;
-        transform.child_frame_id = odometry_.child_frame_id;
-        transform.transform.translation.x = odometry_.pose.pose.position.x;
-        transform.transform.translation.y = odometry_.pose.pose.position.y;
-        transform.transform.translation.z = 0.0;
-        transform.transform.rotation = odometry_.pose.pose.orientation;
-        tf_broadcaster_->sendTransform(transform);
-
-        // 제어 주기
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(
-                static_cast<int>(1000.0 / config_.control_frequency)));
-    }
-
-    // 정지
-    packet_handler->write4ByteTxRx(port_handler, config_.motor_left_id, 104, 0);
-    packet_handler->write4ByteTxRx(port_handler, config_.motor_right_id, 104, 0);
-
-    port_handler->closePort();
-}
-
-float BaseControllerModule::PIDController::compute(float setpoint, float measured, float dt) {
-    float error = setpoint - measured;
-
-    integral += error * dt;
-    float derivative = (error - prev_error) / dt;
-
-    float output = kp * error + ki * integral + kd * derivative;
-
-    prev_error = error;
-
-    return output;
-}
-
-} // namespace mobility
-} // namespace modular_v
 ```
+[Nav2 Module] --/cmd_vel--> [TurtleBot3 Bringup] --> Motors
+```
+
+Nav2 모듈이 계산한 속도 명령(`geometry_msgs/Twist`)을 `/cmd_vel` 토픽으로 publish하면, TurtleBot3의 motor control node가 이를 받아 Dynamixel 모터를 제어합니다
 
 ## 7. 모듈 통합 및 시작
 
@@ -1351,9 +1104,6 @@ int main(int argc, char** argv) {
 
     manager->registerModule("haptic",
         std::make_shared<modular_v::interaction::HapticModule>());
-
-    manager->registerModule("base_controller",
-        std::make_shared<modular_v::mobility::BaseControllerModule>());
 
     // 설정 로드
     std::string config_path = "config/system_config.yaml";

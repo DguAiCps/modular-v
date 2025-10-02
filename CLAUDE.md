@@ -10,6 +10,7 @@ Pre-installed ROS2 packages this framework wraps:
 - **rtabmap_ros**: SLAM functionality (rtabmap_slam, rtabmap_launch, etc.)
 - **zed_ros2**: ZED camera integration (zed_wrapper, zed_components, etc.)
 - **navigation2**: Path planning and control (nav2_bringup, nav2_planner, etc.)
+- **turtlebot3_bringup**: Motor control system (handles /cmd_vel → motor commands)
 
 The framework adds safety features, state management, and unified control over these packages.
 
@@ -24,9 +25,21 @@ colcon build --symlink-install
 
 ### Run
 ```bash
+# Start TurtleBot3 motors first
+ros2 launch turtlebot3_bringup robot.launch.py
+
+# Launch RTAB-Map with 2D grid generation enabled
+ros2 launch rtabmap_launch rtabmap.launch.py \
+  args:="--delete_db_on_start" \
+  Grid.FromDepth:=true \
+  Grid.CellSize:=0.05 \
+  Grid.3D:=false
+
+# Then launch modular-v system
 ros2 launch modular_v system_bringup.launch.py  # Full system
-ros2 launch zed_wrapper zed_camera.launch.py    # ZED only (debug)
-ros2 launch rtabmap_launch rtabmap.launch.py    # RTAB-Map only (debug)
+
+# Debug individual modules
+ros2 launch zed_wrapper zed_camera.launch.py    # ZED only
 ```
 
 ### Monitor
@@ -47,13 +60,27 @@ rviz2 -d config/modular_v.rviz       # Visualization
 
 ### Module Dependencies
 ```
-ZED Camera → RTAB-Map → Navigation → Motor Control
+ZED Camera → RTAB-Map (3D SLAM + 2D Grid) → /map → Navigation (Nav2) → /cmd_vel → TurtleBot3 Bringup
 ```
+
+**Notes**:
+- **RTAB-Map**: Generates 2D occupancy grid from 3D point cloud for Nav2
+  - `/rtabmap/grid_map` → relayed to `/map` by rtabmap_wrapper
+  - Grid parameters: 5cm resolution, 5m range, 2m max obstacle height
+- **Motor Control**: Handled by TurtleBot3's `robot.launch.py` (external to modular-v)
+- **Nav2**: Uses `/map` for global planning, publishes `/cmd_vel` for TurtleBot3
 
 ### Platform Notes
 - **Jetson AGX Orin**: CUDA arch 87, TensorRT inference, 32GB unified memory
 - **ZED 2i**: 15Hz@720p, ULTRA depth mode, IMU fusion enabled
-- **Config Files**: `config/system_config.yaml`, `config/navigation_params.yaml`
+- **Config Files**: `config/system_config.yaml`, `config/navigation_params.yaml`, `modules/perception/rtabmap_module/config/rtabmap_config.yaml`
+
+### RTAB-Map Configuration
+RTAB-Map generates 2D occupancy grids from 3D point clouds for Nav2:
+- Config: `modules/perception/rtabmap_module/config/rtabmap_config.yaml`
+- Grid section enables 2D map generation from depth data
+- rtabmap_wrapper relays `/rtabmap/grid_map` to `/map` topic
+- **Important**: Don't link against rtabmap_slam in CMakeLists.txt (opencv_aruco conflicts on Jetson)
 
 ## C++ Coding Conventions
 

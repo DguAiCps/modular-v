@@ -1,0 +1,11 @@
+# Set navigation destination service
+
+# Request
+geometry_msgs/PoseStamped target_pose
+string description
+
+---
+
+# Response
+bool success
+string message

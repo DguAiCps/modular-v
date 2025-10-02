@@ -1,0 +1,12 @@
+# Save RTAB-Map database service
+
+# Request
+string map_name
+string save_path
+
+---
+
+# Response
+bool success
+string message
+string full_path

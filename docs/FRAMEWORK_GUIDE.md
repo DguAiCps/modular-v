@@ -23,7 +23,7 @@
 │    (Navigation, SLAM, Object Detection, Path Planning)   │
 ├─────────────────────────────────────────────────────────┤
 │                 Hardware Abstraction Layer               │
-│        (Sensor Drivers, Motor Control, GPIO)             │
+│        (Sensor Drivers, TurtleBot3 I/F, GPIO)            │
 ├─────────────────────────────────────────────────────────┤
 │                    Communication Layer                   │
 │                    (ROS2 DDS Middleware)                 │
@@ -36,7 +36,7 @@ graph LR
     A[ZED 2i Camera] -->|RGB+Depth| B[Perception Module]
     B -->|Point Cloud| D[RTAB-Map]
     D -->|Map+Pose| E[Navigation]
-    E -->|Cmd Vel| F[Motor Controller]
+    E -->|/cmd_vel| F[TurtleBot3 Bringup]
     G[User Commands] -->|Voice| H[Interface Module]
     H -->|Goals| E
     E -->|Status| H

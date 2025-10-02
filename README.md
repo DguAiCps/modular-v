@@ -5,8 +5,9 @@ Modular-V는 시각장애인의 안전한 실내외 이동을 지원하는 모�
 
 ## 🎯 주요 특징
 - **모듈형 아키텍처**: 독립적인 모듈 개발 및 통합
-- **실시간 SLAM**: RTAB-Map 기반 3D 매핑 및 위치 추정
+- **실시간 SLAM**: RTAB-Map 기반 3D 매핑 및 2D occupancy grid 생성
 - **안전한 내비게이션**: Nav2 기반 장애물 회피 및 경로 계획
+- **3D to 2D 변환**: 3D 포인트클라우드를 2D 맵으로 자동 변환하여 Nav2 호환
 - **멀티모달 인터페이스**: 음성 및 햅틱 피드백
 - **확장 가능**: 새로운 센서 및 기능 쉽게 추가
 
@@ -88,12 +89,21 @@ colcon build --symlink-install
 # 환경 설정
 source ~/ros2_ws/install/setup.bash
 
-# 전체 시스템 실행
+# 1. TurtleBot3 모터 시스템 시작
+ros2 launch turtlebot3_bringup robot.launch.py
+
+# 2. RTAB-Map SLAM (2D 맵 생성 활성화)
+ros2 launch rtabmap_launch rtabmap.launch.py \
+  args:="--delete_db_on_start" \
+  Grid.FromDepth:=true \
+  Grid.CellSize:=0.05 \
+  Grid.3D:=false
+
+# 3. Modular-V 시스템
 ros2 launch modular_v system_bringup.launch.py
 
 # 개별 모듈 실행
-ros2 launch modular_v perception.launch.py  # 인지 모듈
-ros2 launch modular_v navigation.launch.py  # 내비게이션
+ros2 launch zed_wrapper zed_camera.launch.py  # ZED 카메라만
 ```
 
 ## 📖 문서
@@ -114,6 +124,17 @@ camera:
   depth_mode: 1  # ULTRA
   depth_min: 0.3
   depth_max: 20.0
+```
+
+### RTAB-Map 설정 (modules/perception/rtabmap_module/config/rtabmap_config.yaml)
+```yaml
+# 2D Grid 맵 생성 (Nav2용)
+grid:
+  from_depth: true
+  cell_size: 0.05        # 5cm 해상도
+  range_max: 5.0         # 5m 범위
+  max_obstacle_height: 2.0  # 2m 이하 장애물
+  3d: false              # 2D 그리드 생성
 ```
 
 ### 내비게이션 설정 (config/navigation_params.yaml)

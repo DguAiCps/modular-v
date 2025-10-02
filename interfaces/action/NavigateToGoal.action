@@ -1,0 +1,21 @@
+# Navigate to goal action
+
+# Goal
+geometry_msgs/PoseStamped target_pose
+string description
+
+---
+
+# Result
+bool success
+string message
+float32 total_distance
+float32 total_time
+
+---
+
+# Feedback
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining
+float32 estimated_time_remaining
+string status_message
